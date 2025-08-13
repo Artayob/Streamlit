@@ -1,34 +1,33 @@
-# Streamlit Student Analytics Dashboard (100 students, self-contained)
-# Paste this into a file (e.g., student_dashboard.py) and run:
-#   pip install streamlit pandas numpy matplotlib
-#   streamlit run student_dashboard.py
+# Streamlit Student Dashboard (simple + no matplotlib)
+# Save as: student_dashboard_simple.py
+# Run:
+#   pip install streamlit pandas numpy
+#   streamlit run student_dashboard_simple.py
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from io import StringIO
 
 # ------------------------------
 # 1) APP SETUP
 # ------------------------------
-st.set_page_config(page_title="Student Analytics Dashboard", layout="wide")
-st.title("📊 Student Analytics Dashboard")
-st.caption("Interactive insights for ~100 students with embedded demo data")
+st.set_page_config(page_title="Student Dashboard (Simple)", layout="wide")
+st.title("📊 Student Dashboard (Simple, No Matplotlib)")
+st.caption("Interactive insights for ~100 students — filters + built-in charts only")
 
 # ------------------------------
 # 2) SYNTHETIC DATA (EMBEDDED)
 # ------------------------------
 np.random.seed(42)
-
 num_students = 100
+
 names = [f"Student{str(i).zfill(3)}" for i in range(1, num_students + 1)]
 classes = np.random.choice(["A", "B", "C", "D"], size=num_students, p=[0.28, 0.28, 0.22, 0.22])
 genders = np.random.choice(["Female", "Male"], size=num_students)
 ages = np.random.randint(15, 19, size=num_students)
 attendance = np.clip(np.random.normal(92, 5, size=num_students), 70, 100).round(1)
 
-# Subject scores with slight class-based bias to make it interesting
 def subject_scores(mu, sigma, cls):
     bump = {"A": 3, "B": 1, "C": -1, "D": -3}[cls]
     return int(np.clip(np.random.normal(mu + bump, sigma), 30, 100))
@@ -56,23 +55,23 @@ df["Average"] = (df["Total"] / 5).round(2)
 df["Passed_All"] = (df[["Math", "Science", "English", "History", "IT"]] >= 50).all(axis=1)
 
 # ------------------------------
-# 3) SIDEBAR FILTERS
+# 3) SIDEBAR FILTERS (SIMPLE)
 # ------------------------------
 st.sidebar.header("🔎 Filters")
-class_sel = st.sidebar.multiselect("Class", options=sorted(df["Class"].unique()), default=sorted(df["Class"].unique()))
-gender_sel = st.sidebar.multiselect("Gender", options=sorted(df["Gender"].unique()), default=sorted(df["Gender"].unique()))
+class_sel = st.sidebar.multiselect("Class", sorted(df["Class"].unique()), default=sorted(df["Class"].unique()))
+gender_sel = st.sidebar.multiselect("Gender", sorted(df["Gender"].unique()), default=sorted(df["Gender"].unique()))
 min_att = st.sidebar.slider("Minimum Attendance (%)", 70, 100, 80)
 subject_sel = st.sidebar.selectbox("Focus Subject", ["Math", "Science", "English", "History", "IT"])
 top_n = st.sidebar.slider("Top N by Average", 5, 20, 10)
 
-filt = (
+mask = (
     df["Class"].isin(class_sel) &
     df["Gender"].isin(gender_sel) &
     (df["Attendance%"] >= min_att)
 )
-fdf = df.loc[filt].copy()
+fdf = df.loc[mask].copy()
 
-st.sidebar.success(f"Active filters -> Rows: {len(fdf)} / {len(df)}")
+st.sidebar.success(f"Active filters → Rows: {len(fdf)} / {len(df)}")
 
 # ------------------------------
 # 4) KPIs
@@ -81,120 +80,84 @@ c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Students", len(fdf))
 with c2:
-    st.metric("Avg Attendance", f"{fdf['Attendance%'].mean():.1f}%")
+    st.metric("Avg Attendance", f"{fdf['Attendance%'].mean():.1f}%" if len(fdf) else "—")
 with c3:
-    st.metric("Overall Average", f"{fdf['Average'].mean():.1f}")
+    st.metric("Overall Average", f"{fdf['Average'].mean():.1f}" if len(fdf) else "—")
 with c4:
-    pass_rate = (fdf["Passed_All"].mean() * 100) if len(fdf) else 0
-    st.metric("Pass Rate (All Subjects)", f"{pass_rate:.1f}%")
+    st.metric("Pass Rate (All Subjects)", f"{(fdf['Passed_All'].mean()*100):.1f}%" if len(fdf) else "—")
 with c5:
-    st.metric(f"{subject_sel} Mean", f"{fdf[subject_sel].mean():.1f}")
+    st.metric(f"{subject_sel} Mean", f"{fdf[subject_sel].mean():.1f}" if len(fdf) else "—")
 
 st.divider()
 
 # ------------------------------
-# 5) DATA TABLE & DOWNLOAD
+# 5) DATA TABLE + DOWNLOAD
 # ------------------------------
 st.subheader("📄 Filtered Dataset")
 st.dataframe(fdf.sort_values("Average", ascending=False), use_container_width=True)
 
 csv_buf = StringIO()
 fdf.to_csv(csv_buf, index=False)
-st.download_button("⬇️ Download filtered CSV", csv_buf.getvalue(), file_name="students_filtered.csv", mime="text/csv")
+st.download_button("⬇️ Download filtered CSV", csv_buf.getvalue(), "students_filtered.csv", "text/csv")
 
 st.divider()
 
 # ------------------------------
-# 6) VISUALS - BAR / LINE / HIST / BOX / SCATTER / HEATMAP
+# 6) CHARTS (BUILT-IN ONLY)
 # ------------------------------
-left, right = st.columns([1, 1])
+left, right = st.columns(2)
 
-# A) Average per Subject (Bar)
+# A) Subject means (Bar)
 with left:
     st.subheader("📦 Average Score per Subject (Bar)")
-    subj_means = fdf[["Math", "Science", "English", "History", "IT"]].mean().sort_values(ascending=False)
-    st.bar_chart(subj_means)
+    if len(fdf):
+        subj_means = fdf[["Math", "Science", "English", "History", "IT"]].mean().sort_values(ascending=False)
+        st.bar_chart(subj_means)
+    else:
+        st.info("No data after filters.")
 
-# B) Trend of Averages by Student Index (Line)
+# B) Average by Student index (Line)
 with right:
     st.subheader("📈 Average Score by Student (Line)")
-    if len(fdf) > 0:
-        tmp = fdf.reset_index(drop=True).copy()
-        tmp["StudentIndex"] = np.arange(1, len(tmp) + 1)
-        tmp = tmp[["StudentIndex", "Average"]].set_index("StudentIndex")
-        st.line_chart(tmp)
+    if len(fdf):
+        temp = fdf.reset_index(drop=True)[["Average"]]
+        temp.index = np.arange(1, len(temp) + 1)  # Student index on X
+        st.line_chart(temp)
     else:
         st.info("No data after filters.")
 
 st.divider()
 
-# C) Distribution of Focus Subject (Histogram)
-st.subheader(f"📊 {subject_sel} Score Distribution")
-fig_hist, ax_hist = plt.subplots()
-ax_hist.hist(fdf[subject_sel], bins=12, edgecolor="black")
-ax_hist.set_xlabel(subject_sel)
-ax_hist.set_ylabel("Count")
-ax_hist.set_title(f"{subject_sel} Distribution")
-st.pyplot(fig_hist)
-
-# D) Boxplot for All Subjects
-st.subheader("🧰 Boxplot of All Subjects")
-fig_box, ax_box = plt.subplots()
-ax_box.boxplot([fdf["Math"], fdf["Science"], fdf["English"], fdf["History"], fdf["IT"]],
-               labels=["Math", "Science", "English", "History", "IT"])
-ax_box.set_ylabel("Score")
-ax_box.set_title("Score Spread by Subject")
-st.pyplot(fig_box)
-
-st.divider()
-
-# E) Top N Students by Average (Bar)
+# C) Top N by Average (Bar)
 st.subheader(f"🏆 Top {top_n} Students by Average")
-top_df = fdf.nlargest(top_n, "Average")[["Name", "Average"]].set_index("Name")
-st.bar_chart(top_df)
-
-# F) Scatter: Math vs Science (bubble by Attendance)
-st.subheader("🔬 Scatter: Math vs Science (Bubble = Attendance)")
-fig_scatter, ax_scatter = plt.subplots()
-sizes = (fdf["Attendance%"] - fdf["Attendance%"].min() + 1) * 5
-ax_scatter.scatter(fdf["Math"], fdf["Science"], s=sizes, alpha=0.6)
-ax_scatter.set_xlabel("Math")
-ax_scatter.set_ylabel("Science")
-ax_scatter.set_title("Math vs Science — Bubble size = Attendance%")
-st.pyplot(fig_scatter)
+if len(fdf):
+    top_df = fdf.nlargest(top_n, "Average")[["Name", "Average"]].set_index("Name")
+    st.bar_chart(top_df)
+else:
+    st.info("No data after filters.")
 
 st.divider()
 
-# G) Correlation Heatmap (Subjects Only)
-st.subheader("🧠 Correlation Heatmap (Subjects)")
-subj_cols = ["Math", "Science", "English", "History", "IT"]
-corr = fdf[subj_cols].corr()
-
-fig_heat, ax_heat = plt.subplots()
-im = ax_heat.imshow(corr.values, aspect="auto")
-ax_heat.set_xticks(range(len(subj_cols)))
-ax_heat.set_yticks(range(len(subj_cols)))
-ax_heat.set_xticklabels(subj_cols, rotation=45, ha="right")
-ax_heat.set_yticklabels(subj_cols)
-for i in range(len(subj_cols)):
-    for j in range(len(subj_cols)):
-        ax_heat.text(j, i, f"{corr.values[i, j]:.2f}", ha="center", va="center")
-ax_heat.set_title("Correlation Heatmap")
-fig_heat.colorbar(im, ax=ax_heat, fraction=0.046, pad=0.04)
-st.pyplot(fig_heat)
+# D) Scatter: Math vs Science (Built-in scatter)
+st.subheader("🔬 Scatter: Math vs Science")
+if len(fdf):
+    st.scatter_chart(fdf, x="Math", y="Science", color="Class")
+else:
+    st.info("No data after filters.")
 
 st.divider()
 
-# ------------------------------
-# 7) PER-CLASS COMPARISON (Bar)
-# ------------------------------
-st.subheader("🏫 Average Score by Class (All Subjects Combined)")
-class_avg = fdf.groupby("Class")["Average"].mean().sort_values(ascending=False)
-st.bar_chart(class_avg)
+# E) Simple Histogram for Focus Subject (bin + bar_chart)
+st.subheader(f"📊 {subject_sel} Score Distribution (Binned)")
+if len(fdf):
+    # Create simple bins and count
+    bins = np.arange(0, 101, 10)  # 0-100 step 10
+    counts, edges = np.histogram(fdf[subject_sel], bins=bins)
+    # Build a dataframe with bin labels for a bar chart
+    bin_labels = [f"{edges[i]}–{edges[i+1]-1}" for i in range(len(edges)-1)]
+    hist_df = pd.DataFrame({"Bins": bin_labels, "Count": counts}).set_index("Bins")
+    st.bar_chart(hist_df)
+else:
+    st.info("No data after filters.")
 
-# ------------------------------
-# 8) NOTES
-# ------------------------------
-st.caption("Tip: Use the sidebar to slice by Class, Gender, and Attendance. Download the filtered CSV to share.")
-
-
+st.caption("Tip: Use the sidebar to filter. All charts use Streamlit’s built-in chart functions (no matplotlib).")
